@@ -1,0 +1,8 @@
+# Ignore environment variables
+.env
+
+# Ignore node modules (already big & auto-generated)
+node_modules/
+
+# Ignore logs / temp files
+*.log
