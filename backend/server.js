@@ -5,10 +5,16 @@ const dotenv = require('dotenv');
 const User = require('./models/User');
 const Medicine = require('./models/Medicine');
 
+
 dotenv.config(); // This loads your .env file (MONGO_URI & PORT)
 
 const app = express();
+app.use(express.json());   
 
+const authRoutes = require('./routes/auth');
+const medsRoutes = require('./routes/meds');
+app.use('/api/auth', authRoutes);
+app.use('/api/meds', medsRoutes);
 // Allow frontend to connect later (CORS - temporary open for testing)
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -59,7 +65,7 @@ const PORT = process.env.PORT || 5000;
 //     res.status(500).send('Error saving dummy data: ' + err.message);
 //   }
 // });
-
+app.use('/api/meds', medsRoutes);
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
