@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
+const authMiddleware = require('../middleware/auth');
 const Medicine = require('../models/Medicine');
 
-// POST /api/meds - Create a new medicine (protected)
-router.post('/', auth, async (req, res) => {
+// POST /api/meds
+router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log('Creating medicine for user:', req.user.email);
 
@@ -19,13 +19,12 @@ router.post('/', auth, async (req, res) => {
       notes
     } = req.body;
 
-    // Basic validation (add more as needed)
     if (!name || !dosage || !frequency || !expiryDate) {
       return res.status(400).json({ message: 'Required fields: name, dosage, frequency, expiryDate' });
     }
 
     const newMedicine = new Medicine({
-      userId: req.user.id,          // Link to logged-in user
+      userId: req.user.id,
       name,
       dosage,
       frequency,
@@ -34,7 +33,7 @@ router.post('/', auth, async (req, res) => {
       expiryDate: new Date(expiryDate),
       quantity: quantity || 0,
       notes: notes || '',
-      intakeLog: []                 // Empty log to start
+      intakeLog: []
     });
 
     await newMedicine.save();
@@ -47,37 +46,30 @@ router.post('/', auth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error creating medicine:', err);
-    res.status(500).json({ 
-      message: 'Server error creating medicine',
-      error: err.message 
-    });
+    console.error('Error creating medicine:', err.stack);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-// GET /api/meds - Get user's medicines (with optional expiry filter)
-router.get('/', auth, async (req, res) => {
+// GET /api/meds
+router.get('/', authMiddleware, async (req, res) => {
   try {
     console.log('Logged-in user ID:', req.user.id);
     const userId = req.user.id;
     let query = { userId };
 
-    // Optional filter: ?expiringSoon=true → only medicines expiring in next 30 days
     const expiringSoon = req.query.expiringSoon === 'true';
     if (expiringSoon) {
       const today = new Date();
       const thirtyDaysFromNow = new Date(today);
       thirtyDaysFromNow.setDate(today.getDate() + 30);
-
       query.expiryDate = { $gte: today, $lte: thirtyDaysFromNow };
     }
 
-    const medicines = await Medicine.find(query)
-      .sort({ expiryDate: 1 });  // Soonest expiry first
+    const medicines = await Medicine.find(query).sort({ expiryDate: 1 });
 
-    // Add simple warning to each medicine
     const medicinesWithWarnings = medicines.map(med => {
-      const medObj = med.toObject(); // convert to plain JS object
+      const medObj = med.toObject();
 
       if (med.expiryDate) {
         const today = new Date();
@@ -105,38 +97,30 @@ router.get('/', auth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error fetching medicines:', err);
+    console.error('Error fetching medicines:', err.stack);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-
-// PUT /api/meds/:id - Update a medicine (protected, only own medicines)
-router.put('/:id', auth, async (req, res) => {
+// PUT /api/meds/:id
+router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    console.log(`Update request for medicine ID: ${req.params.id} by user: ${req.user.email}`);
+    console.log(`Update request for ID: ${req.params.id} by ${req.user.email}`);
 
-    // Find the medicine by ID and make sure it belongs to this user
     const medicine = await Medicine.findOne({
       _id: req.params.id,
       userId: req.user.id
     });
 
     if (!medicine) {
-      console.log('Medicine not found or not owned by user');
-      return res.status(404).json({ message: 'Medicine not found or you do not have permission' });
+      return res.status(404).json({ message: 'Not found or no permission' });
     }
 
-    // Allowed fields to update (prevent changing userId or _id)
-    const allowedUpdates = [
-      'name', 'dosage', 'frequency', 'startDate', 'endDate',
-      'expiryDate', 'quantity', 'notes'
-    ];
+    const allowed = ['name', 'dosage', 'frequency', 'startDate', 'endDate', 'expiryDate', 'quantity', 'notes'];
 
-    // Loop through request body and only update allowed fields
     Object.keys(req.body).forEach(key => {
-      if (allowedUpdates.includes(key)) {
-        if (key === 'startDate' || key === 'endDate' || key === 'expiryDate') {
+      if (allowed.includes(key)) {
+        if (['startDate', 'endDate', 'expiryDate'].includes(key)) {
           medicine[key] = req.body[key] ? new Date(req.body[key]) : medicine[key];
         } else {
           medicine[key] = req.body[key];
@@ -144,100 +128,79 @@ router.put('/:id', auth, async (req, res) => {
       }
     });
 
-    // Save the updated document
     await medicine.save();
 
-    console.log('Medicine updated successfully');
-
     res.json({
-      message: 'Medicine updated successfully',
+      message: 'Updated successfully',
       medicine
     });
 
   } catch (err) {
-    console.error('Error updating medicine:', err.message);
-    res.status(500).json({
-      message: 'Server error updating medicine',
-      error: err.message
-    });
+    console.error('Update error:', err.stack);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-// DELETE /api/meds/:id - Delete a medicine (protected, only own medicines)
-router.delete('/:id', auth, async (req, res) => {
+// DELETE /api/meds/:id
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    console.log(`Delete request for medicine ID: ${req.params.id} by user: ${req.user.email}`);
+    console.log(`Delete request for ID: ${req.params.id} by ${req.user.email}`);
 
-    // Find and delete only if it belongs to this user
     const medicine = await Medicine.findOneAndDelete({
       _id: req.params.id,
       userId: req.user.id
     });
 
     if (!medicine) {
-      console.log('Medicine not found or not owned by user');
-      return res.status(404).json({ message: 'Medicine not found or you do not have permission to delete it' });
+      return res.status(404).json({ message: 'Not found or no permission' });
     }
 
-    console.log('Medicine deleted successfully');
-
     res.json({
-      message: 'Medicine deleted successfully',
+      message: 'Deleted successfully',
       deletedId: req.params.id
     });
 
   } catch (err) {
-    console.error('Error deleting medicine:', err.message);
-    res.status(500).json({
-      message: 'Server error deleting medicine',
-      error: err.message
-    });
+    console.error('Delete error:', err.stack);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-// POST /api/meds/:id/log - Log a dose taken (protected, only own medicine)
-router.post('/:id/log', auth, async (req, res) => {
+// POST /api/meds/:id/log
+// GET /api/meds/:id/logs - Get intake log history for a medicine (protected)
+router.get('/:id/logs', authMiddleware, async (req, res) => {
   try {
-    console.log(`Dose log request for medicine ID: ${req.params.id} by user: ${req.user.email}`);
+    console.log(`Fetching logs for medicine ID: ${req.params.id} by user: ${req.user.email}`);
 
-    // Find the medicine (must belong to this user)
     const medicine = await Medicine.findOne({
       _id: req.params.id,
       userId: req.user.id
-    });
+    }).select('name intakeLog');  // Only fetch name + logs (efficient)
 
     if (!medicine) {
-      console.log('Medicine not found or not owned');
-      return res.status(404).json({ message: 'Medicine not found or you do not have permission' });
+      return res.status(404).json({ message: 'Medicine not found or no permission' });
     }
 
-    // Optional: You can add request body validation later
-    // For now: just push a new log entry with current time
-    medicine.intakeLog.push({
-      date: new Date(),
-      taken: true
-    });
+    const logs = medicine.intakeLog || [];
 
-    // Save the updated medicine
-    await medicine.save();
+    // Simple summary stats
+    const takenCount = logs.filter(log => log.taken).length;
+    const missedCount = logs.length - takenCount;
+    const compliancePercent = logs.length > 0 ? Math.round((takenCount / logs.length) * 100) : 0;
 
-    console.log('Dose logged successfully. Total logs now:', medicine.intakeLog.length);
-
-    res.status(201).json({
-      message: 'Dose logged successfully',
-      medicine: {
-        _id: medicine._id,
-        name: medicine.name,
-        intakeLog: medicine.intakeLog   // return updated log array
-      }
+    res.json({
+      message: 'Intake logs retrieved',
+      medicineName: medicine.name,
+      totalLogs: logs.length,
+      takenCount,
+      missedCount,
+      compliancePercent,
+      logs: logs.sort((a, b) => new Date(b.date) - new Date(a.date))  // Newest first
     });
 
   } catch (err) {
-    console.error('Error logging dose:', err.message);
-    res.status(500).json({
-      message: 'Server error logging dose',
-      error: err.message
-    });
+    console.error('Error fetching logs:', err.stack);
+    res.status(500).json({ message: 'Server error fetching logs', error: err.message });
   }
 });
 

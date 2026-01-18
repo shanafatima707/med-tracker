@@ -1,3 +1,6 @@
+
+const mongoose = require('mongoose');
+
 const medicineSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -21,10 +24,5 @@ const medicineSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });   // auto-updates updatedAt
 
-// Optional pre-save hook if you want auto-updatedAt
-medicineSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
-});
 
 module.exports = mongoose.model('Medicine', medicineSchema);
